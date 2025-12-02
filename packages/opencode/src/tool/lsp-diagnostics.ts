@@ -4,6 +4,7 @@ import path from "path"
 import { LSP } from "../lsp"
 import DESCRIPTION from "./lsp-diagnostics.txt"
 import { Instance } from "../project/instance"
+import { Token } from "../util/token"
 
 export const LspDiagnosticTool = Tool.define("lsp_diagnostics", {
   description: DESCRIPTION,
@@ -15,12 +16,17 @@ export const LspDiagnosticTool = Tool.define("lsp_diagnostics", {
     await LSP.touchFile(normalized, true)
     const diagnostics = await LSP.diagnostics()
     const file = diagnostics[normalized]
+    const rawOutput = file?.length ? file.map(LSP.Diagnostic.pretty).join("\n") : "No errors found"
+    const truncationResult = Token.truncate(rawOutput, Token.getToolOutputLimit())
     return {
       title: path.relative(Instance.worktree, normalized),
       metadata: {
         diagnostics,
+        truncated: truncationResult.truncated,
+        originalTokens: truncationResult.originalTokens,
+        finalTokens: truncationResult.finalTokens,
       },
-      output: file?.length ? file.map(LSP.Diagnostic.pretty).join("\n") : "No errors found",
+      output: truncationResult.text,
     }
   },
 })

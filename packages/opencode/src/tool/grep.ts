@@ -4,6 +4,7 @@ import { Ripgrep } from "../file/ripgrep"
 
 import DESCRIPTION from "./grep.txt"
 import { Instance } from "../project/instance"
+import { Token } from "../util/token"
 
 export const GrepTool = Tool.define("grep", {
   description: DESCRIPTION,
@@ -73,22 +74,23 @@ export const GrepTool = Tool.define("grep", {
 
     matches.sort((a, b) => b.modTime - a.modTime)
 
-    const limit = 100
-    const truncated = matches.length > limit
-    const finalMatches = truncated ? matches.slice(0, limit) : matches
-
-    if (finalMatches.length === 0) {
+    if (matches.length === 0) {
+      const output = "No files found"
       return {
         title: params.pattern,
-        metadata: { matches: 0, truncated: false },
-        output: "No files found",
+        metadata: {
+          matches: 0,
+          truncated: false,
+        },
+        output,
       }
     }
 
-    const outputLines = [`Found ${finalMatches.length} matches`]
-
+    // Build output lines with file grouping
+    const outputLines = [`Found ${matches.length} matches`]
     let currentFile = ""
-    for (const match of finalMatches) {
+
+    for (const match of matches) {
       if (currentFile !== match.path) {
         if (currentFile !== "") {
           outputLines.push("")
@@ -99,18 +101,22 @@ export const GrepTool = Tool.define("grep", {
       outputLines.push(`  Line ${match.lineNum}: ${match.lineText}`)
     }
 
-    if (truncated) {
-      outputLines.push("")
-      outputLines.push("(Results are truncated. Consider using a more specific path or pattern.)")
+    // Apply token-aware truncation
+    const truncationResult = Token.truncateLines(outputLines, Token.getToolOutputLimit(), 1) // Keep header line
+
+    let finalOutput = truncationResult.lines.join("\n")
+
+    if (truncationResult.truncated) {
+      finalOutput += "\n\n(Results are truncated to fit token budget. Consider using a more specific path or pattern.)"
     }
 
     return {
       title: params.pattern,
       metadata: {
-        matches: finalMatches.length,
-        truncated,
+        matches: matches.length,
+        truncated: truncationResult.truncated,
       },
-      output: outputLines.join("\n"),
+      output: finalOutput,
     }
   },
 })

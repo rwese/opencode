@@ -12,6 +12,7 @@ import { Identifier } from "../id/id"
 import { Permission } from "../permission"
 import { Agent } from "@/agent/agent"
 import { iife } from "@/util/iife"
+import { Token } from "../util/token"
 
 const DEFAULT_READ_LIMIT = 2000
 const MAX_LINE_LENGTH = 2000
@@ -114,6 +115,8 @@ export const ReadTool = Tool.define("read", {
         output: msg,
         metadata: {
           preview: msg,
+          tokenTruncated: false,
+          estimatedTokens: Token.estimate(msg),
         },
         attachments: [
           {
@@ -134,20 +137,37 @@ export const ReadTool = Tool.define("read", {
     const limit = params.limit ?? DEFAULT_READ_LIMIT
     const offset = params.offset || 0
     const lines = await file.text().then((text) => text.split("\n"))
+
+    // Truncate individual lines first
     const raw = lines.slice(offset, offset + limit).map((line) => {
       return line.length > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) + "..." : line
     })
-    const content = raw.map((line, index) => {
+
+    // Format with line numbers
+    const formattedLines = raw.map((line, index) => {
       return `${(index + offset + 1).toString().padStart(5, "0")}| ${line}`
     })
+
+    // Apply token-based truncation to the formatted output
+    const toolOutputLimit = Token.getToolOutputLimit()
+    const headerText = "<file>\n"
+    const footerTemplate = (totalLines: number) => `\n\n(End of file - total ${totalLines} lines)\n</file>`
+
+    // Reserve tokens for header and footer
+    const headerTokens = Token.estimate(headerText)
+    const footerTokens = Token.estimate(footerTemplate(lines.length))
+    const availableTokens = toolOutputLimit - headerTokens - footerTokens
+
+    const truncationResult = Token.truncateLines(formattedLines, availableTokens, 0)
+    const content = truncationResult.lines
     const preview = raw.slice(0, 20).join("\n")
 
-    let output = "<file>\n"
+    let output = headerText
     output += content.join("\n")
 
     const totalLines = lines.length
-    const lastReadLine = offset + content.length
-    const hasMoreLines = totalLines > lastReadLine
+    const lastReadLine = offset + truncationResult.keptLines
+    const hasMoreLines = totalLines > lastReadLine || truncationResult.truncated
 
     if (hasMoreLines) {
       output += `\n\n(File has more lines. Use 'offset' parameter to read beyond line ${lastReadLine})`
@@ -165,6 +185,8 @@ export const ReadTool = Tool.define("read", {
       output,
       metadata: {
         preview,
+        tokenTruncated: truncationResult.truncated,
+        estimatedTokens: Token.estimate(output),
       },
     }
   },

@@ -3,6 +3,7 @@ import { spawn } from "child_process"
 import { Tool } from "./tool"
 import DESCRIPTION from "./bash.txt"
 import { Log } from "../util/log"
+import { Token } from "../util/token"
 import { Instance } from "../project/instance"
 import { lazy } from "@/util/lazy"
 import { Language } from "web-tree-sitter"
@@ -316,10 +317,8 @@ export const BashTool = Tool.define("bash", async () => {
         })
       })
 
-      if (output.length > MAX_OUTPUT_LENGTH) {
-        output = output.slice(0, MAX_OUTPUT_LENGTH)
-        output += "\n\n(Output was truncated due to length limit)"
-      }
+      // Apply token-aware truncation to prevent context overflow
+      output = Token.truncate(output, Token.getToolOutputLimit()).text
 
       if (timedOut) {
         output += `\n\n(Command timed out after ${timeout} ms)`

@@ -1,5 +1,6 @@
 import z from "zod"
 import { Tool } from "./tool"
+import { Token } from "../util/token"
 import DESCRIPTION from "./codesearch.txt"
 import { Config } from "../config/config"
 import { Permission } from "../permission"
@@ -110,10 +111,15 @@ export const CodeSearchTool = Tool.define("codesearch", {
         if (line.startsWith("data: ")) {
           const data: McpCodeResponse = JSON.parse(line.substring(6))
           if (data.result && data.result.content && data.result.content.length > 0) {
+            const truncationResult = Token.truncate(data.result.content[0].text, Token.getToolOutputLimit())
             return {
-              output: data.result.content[0].text,
+              output: truncationResult.text,
               title: `Code search: ${params.query}`,
-              metadata: {},
+              metadata: {
+                truncated: truncationResult.truncated,
+                originalTokens: truncationResult.originalTokens,
+                finalTokens: truncationResult.finalTokens,
+              },
             }
           }
         }
@@ -123,7 +129,11 @@ export const CodeSearchTool = Tool.define("codesearch", {
         output:
           "No code snippets or documentation found. Please try a different query, be more specific about the library or programming concept, or check the spelling of framework names.",
         title: `Code search: ${params.query}`,
-        metadata: {},
+        metadata: {
+          truncated: false,
+          originalTokens: 0,
+          finalTokens: 0,
+        },
       }
     } catch (error) {
       clearTimeout(timeoutId)

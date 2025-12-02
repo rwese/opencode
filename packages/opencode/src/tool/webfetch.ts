@@ -4,6 +4,7 @@ import TurndownService from "turndown"
 import DESCRIPTION from "./webfetch.txt"
 import { Config } from "../config/config"
 import { Permission } from "../permission"
+import { Token } from "../util/token"
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000 // 30 seconds
@@ -94,50 +95,42 @@ export const WebFetchTool = Tool.define("webfetch", {
     const title = `${params.url} (${contentType})`
 
     // Handle content based on requested format and actual content type
+    let output: string
     switch (params.format) {
       case "markdown":
         if (contentType.includes("text/html")) {
-          const markdown = convertHTMLToMarkdown(content)
-          return {
-            output: markdown,
-            title,
-            metadata: {},
-          }
+          output = convertHTMLToMarkdown(content)
+        } else {
+          output = content
         }
-        return {
-          output: content,
-          title,
-          metadata: {},
-        }
+        break
 
       case "text":
         if (contentType.includes("text/html")) {
-          const text = await extractTextFromHTML(content)
-          return {
-            output: text,
-            title,
-            metadata: {},
-          }
+          output = await extractTextFromHTML(content)
+        } else {
+          output = content
         }
-        return {
-          output: content,
-          title,
-          metadata: {},
-        }
+        break
 
       case "html":
-        return {
-          output: content,
-          title,
-          metadata: {},
-        }
-
       default:
-        return {
-          output: content,
-          title,
-          metadata: {},
-        }
+        output = content
+        break
+    }
+
+    // Apply token-aware truncation
+    const truncationResult = Token.truncate(output, Token.getToolOutputLimit())
+    const finalOutput = truncationResult.text
+
+    return {
+      output: finalOutput,
+      title,
+      metadata: {
+        truncated: truncationResult.truncated,
+        originalTokens: truncationResult.originalTokens,
+        finalTokens: truncationResult.finalTokens,
+      },
     }
   },
 })
