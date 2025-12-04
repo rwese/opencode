@@ -1,3 +1,4 @@
+import { $ } from "bun"
 import { NamedError } from "@opencode-ai/util/error"
 import matter from "gray-matter"
 import { z } from "zod"
@@ -14,8 +15,34 @@ export namespace ConfigMarkdown {
     return Array.from(template.matchAll(SHELL_REGEX))
   }
 
+  export async function resolveShell(text: string) {
+    const matches = shell(text)
+    if (matches.length === 0) return text
+
+    const results = await Promise.all(
+      matches.map(async ([, cmd]) => {
+        try {
+          const output = await $`bash -c ${cmd}`.nothrow().text()
+          return output.trim()
+        } catch (error) {
+          return `Error executing command: ${error instanceof Error ? error.message : String(error)}`
+        }
+      }),
+    )
+
+    let index = 0
+    return text.replace(SHELL_REGEX, () => JSON.stringify(results[index++]))
+  }
+
   export async function parse(filePath: string) {
-    const template = await Bun.file(filePath).text()
+    let template = await Bun.file(filePath).text()
+
+    // Resolve shell commands in frontmatter only
+    const frontmatterMatch = template.match(/^---\n([\s\S]*?)\n---/)
+    if (frontmatterMatch) {
+      const resolvedFrontmatter = await resolveShell(frontmatterMatch[1])
+      template = template.replace(frontmatterMatch[0], `---\n${resolvedFrontmatter}\n---`)
+    }
 
     try {
       const md = matter(template)
